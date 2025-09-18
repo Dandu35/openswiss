@@ -3,62 +3,78 @@ import Stripe from 'stripe';
 
 export const runtime = 'nodejs';
 
-function safeBaseUrl() {
-  const raw = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || 'http://localhost:3000';
-  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+function baseFromReq(req: NextRequest) {
+  const host = req.headers.get('host') || 'localhost:3000';
+  const proto = (req.headers.get('x-forwarded-proto') || 'https').split(',')[0];
+  return `${proto}://${host}`;
+}
+
+function redirect(base: string, msg?: string, cookies: string[] = []) {
+  const headers = new Headers();
+  headers.set('Location', msg ? `${base}/?msg=${encodeURIComponent(msg)}` : base);
+  cookies.forEach(c => headers.append('Set-Cookie', c));
+  return new Response(null, { status: 302, headers });
+}
+
+function cookie(name: string, value: string, maxAgeSec: number, isProd: boolean) {
+  const attrs = `Path=/; HttpOnly; SameSite=Lax${isProd ? '; Secure' : ''}`;
+  return `${name}=${encodeURIComponent(value)}; Max-Age=${maxAgeSec}; ${attrs}`;
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.STRIPE_SECRET_KEY;
+  const base = baseFromReq(req);
+  const secret = process.env.STRIPE_SECRET_KEY || '';
   const url = new URL(req.url);
-  const sessionId = url.searchParams.get('session_id');
-  const base = safeBaseUrl();
+  const sessionId = url.searchParams.get('session_id') || '';
 
-  if (!secret || !sessionId) {
-    return redirectWithCookies(base, { msg: 'Faltan datos de Stripe' });
+  // Validaciones tempranas
+  if (!secret) return redirect(base, 'Falta STRIPE_SECRET_KEY');
+  if (!sessionId) return redirect(base, 'Falta session_id');
+
+  // Chequeo de modo (diagnóstico útil)
+  const isLiveKey = secret.startsWith('sk_live_');
+  const isTestKey = secret.startsWith('sk_test_');
+  const isTestSession = sessionId.startsWith('cs_test_');
+  const isLiveSession = sessionId.startsWith('cs_live_');
+  if ((isTestSession && !isTestKey) || (isLiveSession && !isLiveKey)) {
+    const msg = isTestSession
+      ? 'Sesión TEST con clave LIVE. Usa sk_test_* y price de test.'
+      : 'Sesión LIVE con clave TEST. Usa sk_live_* y price live.';
+    return redirect(base, msg);
   }
 
-  const stripe = new Stripe(secret);
-
   try {
+    const stripe = new Stripe(secret);
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
       expand: ['subscription', 'customer'],
     });
 
-    const statusOk = session.status === 'complete' || session.payment_status === 'paid';
+    // Éxito de checkout
+    const ok =
+      session.status === 'complete' ||
+      session.payment_status === 'paid' ||
+      session.payment_status === 'no_payment_required'; // por si hay trial
+
+    if (!ok) return redirect(base, 'Pago no completado');
+
     const customerId =
-      typeof session.customer === 'string' ? session.customer : session.customer?.id || null;
+      typeof session.customer === 'string' ? session.customer : session.customer?.id || '';
     const subscriptionId =
-      typeof session.subscription === 'string' ? session.subscription : session.subscription?.id || null;
+      typeof session.subscription === 'string' ? session.subscription : session.subscription?.id || '';
 
-    if (!statusOk) {
-      return redirectWithCookies(base, { msg: 'Pago no completado' });
-    }
-
-    // Cookies Pro + customer + subscription (35 días)
     const maxAge = 60 * 60 * 24 * 35;
+    const isProd = process.env.NODE_ENV === 'production';
     const cookies: string[] = [
-      cookie('os_pro', '1', maxAge),
+      cookie('os_pro', '1', maxAge, isProd),
     ];
-    if (customerId) cookies.push(cookie('os_cust', customerId, maxAge));
-    if (subscriptionId) cookies.push(cookie('os_sub', subscriptionId, maxAge));
+    if (customerId) cookies.push(cookie('os_cust', customerId, maxAge, isProd));
+    if (subscriptionId) cookies.push(cookie('os_sub', subscriptionId, maxAge, isProd));
 
-    const headers = new Headers();
-    headers.set('Location', `${base}/?pro=1`);
-    cookies.forEach(c => headers.append('Set-Cookie', c));
-    return new Response(null, { status: 302, headers });
+    return redirect(base, 'pro=1', cookies);
   } catch (e: any) {
-    console.error('Stripe confirm error:', e?.message || e);
-    return redirectWithCookies(base, { msg: 'Error verificando sesión de pago' });
+    // Mostrar el mensaje real de Stripe en la query para depurar
+    const rawMsg = e?.raw?.message || e?.message || 'Error verificando sesión de pago';
+    console.error('Stripe confirm error:', rawMsg);
+    return redirect(base, rawMsg);
   }
-}
-
-function cookie(name: string, value: string, maxAgeSec: number) {
-  return `${name}=${encodeURIComponent(value)}; Max-Age=${maxAgeSec}; Path=/; HttpOnly; SameSite=Lax; Secure`;
-}
-
-function redirectWithCookies(base: string, { msg }: { msg?: string } = {}) {
-  const headers = new Headers();
-  headers.set('Location', msg ? `${base}/?msg=${encodeURIComponent(msg)}` : base);
-  return new Response(null, { status: 302, headers });
 }
