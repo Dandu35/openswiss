@@ -3,6 +3,9 @@ import type { Metadata } from 'next';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import CookieConsent from '../components/CookieConsent';
+
+export const dynamic = 'force-dynamic';
+
 function safeUrl(u?: string) {
   try {
     if (!u) return new URL('https://openswiss.example');
