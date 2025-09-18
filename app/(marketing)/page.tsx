@@ -14,7 +14,9 @@ export default function Page() {
           Edita PDFs, resume y mejora tus textos con IA — todo en un solo lugar, gratis para empezar.
         </p>
         <div className="flex gap-3 justify-center">
-        <CTAButton href="/tools">Probar herramientas</CTAButton>        </div>
+        <CTAButton href="/tools">Probar herramientas</CTAButton>          
+        <a href="#precios" className="btn bg-neutral-800 hover:bg-neutral-700">Ver precios</a>
+        </div>
       </header>
 
       <section className="grid md:grid-cols-3 gap-5">
