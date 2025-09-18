@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0b0c10;
+  --fg: #f7fafc;
+}
+html, body { height: 100%; }
+body { @apply bg-neutral-950 text-neutral-100; }
+.container { @apply max-w-6xl mx-auto px-4; }
+.btn { @apply inline-flex items-center justify-center rounded-xl px-4 py-2 font-medium bg-brand text-white hover:bg-brand-dark transition; }
+.card { @apply rounded-2xl border border-neutral-800 bg-neutral-900 p-5 shadow; }
+.input { @apply w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand; }
+.textarea { @apply w-full rounded-xl border border-neutral-700 bg-neutral-900 p-3 text-sm outline-none focus:ring-2 focus:ring-brand; min-height: 160px; }
