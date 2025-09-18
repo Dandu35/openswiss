@@ -3,8 +3,20 @@ import type { Metadata } from 'next';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
+function safeUrl(u?: string) {
+  try {
+    if (!u) return new URL('https://openswiss.example');
+    const hasProtocol = /^https?:\/\//i.test(u);
+    return new URL(hasProtocol ? u : `https://${u}`);
+  } catch {
+    return new URL('https://openswiss.example');
+  }
+}
+
+const siteURL = safeUrl(process.env.NEXT_PUBLIC_SITE_URL);
+
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://openswiss.example'),
+  metadataBase: siteURL,
   title: {
     default: 'openSwiss — Navaja suiza digital',
     template: '%s · openSwiss'
@@ -13,7 +25,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'openSwiss — navaja suiza digital',
     description: 'Herramientas de estudio y productividad con IA.',
-    url: process.env.NEXT_PUBLIC_SITE_URL || 'https://openswiss.example',
+    url: siteURL.toString(),
     siteName: 'openSwiss',
     locale: 'es_ES',
     type: 'website'
@@ -32,3 +44,4 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
+
