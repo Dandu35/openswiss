@@ -8,7 +8,9 @@ export async function POST(_req: NextRequest) {
     return new Response(JSON.stringify({ error: 'Faltan STRIPE_SECRET_KEY o STRIPE_PRICE_ID_MONTHLY' }), { status: 500 });
   }
 
-  const stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+  // ❌ const stripe = new Stripe(secret, { apiVersion: '2024-06-20' });
+  const stripe = new Stripe(secret); // ✅ deja que el SDK use su versión por defecto
+
   const base =
     process.env.NEXT_PUBLIC_SITE_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
@@ -21,5 +23,8 @@ export async function POST(_req: NextRequest) {
     cancel_url: `${base}/#precios`,
   });
 
-  return new Response(JSON.stringify({ url: session.url }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ url: session.url }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
