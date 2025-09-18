@@ -6,14 +6,21 @@ import Footer from '../components/Footer';
 function safeUrl(u?: string) {
   try {
     if (!u) return new URL('https://openswiss.example');
-    const hasProtocol = /^https?:\/\//i.test(u);
-    return new URL(hasProtocol ? u : `https://${u}`);
+    // Si Vercel expone VERCEL_URL (sin protocolo), lo componemos
+    if (/^[a-z0-9.-]+\.vercel\.app$/i.test(u) || /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(u)) {
+      return new URL(`https://${u}`);
+    }
+    // Si ya trae http/https
+    if (/^https?:\/\//i.test(u)) return new URL(u);
+    // Cualquier otra cosa, fallback
+    return new URL('https://openswiss.example');
   } catch {
     return new URL('https://openswiss.example');
   }
 }
 
-const siteURL = safeUrl(process.env.NEXT_PUBLIC_SITE_URL);
+const siteURL =
+  safeUrl(process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL || 'https://openswiss.example');
 
 export const metadata: Metadata = {
   metadataBase: siteURL,
@@ -44,4 +51,3 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
-
