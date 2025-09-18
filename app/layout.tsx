@@ -2,7 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-
+import CookieConsent from '../components/CookieConsent';
 function safeUrl(u?: string) {
   try {
     if (!u) return new URL('https://openswiss.example');
@@ -47,7 +47,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Navbar />
         <main className="container py-10">{children}</main>
         <Footer />
+        <CookieConsent />
       </body>
     </html>
   );
+  
 }
