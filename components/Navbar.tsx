@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 
 export default function Navbar() {
   const isPro = cookies().get('os_pro')?.value === '1';
+
   return (
     <nav className="border-b border-neutral-800">
       <div className="container flex items-center justify-between h-14">
@@ -14,6 +15,7 @@ export default function Navbar() {
         <div className="flex items-center gap-4 text-sm">
           <Link href="/tools" className="hover:underline">Herramientas</Link>
           <a href="/#precios" className="hover:underline">Precios</a>
+          {isPro && <a href="/api/stripe/portal" className="hover:underline">Cuenta</a>}
         </div>
       </div>
     </nav>
