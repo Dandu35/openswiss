@@ -1,7 +1,13 @@
+// app/(marketing)/page.tsx
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import CTAButton from '../../components/CTAButton';
+import BuyProButton from '../../components/BuyProButton';
 
 export default function Page() {
+  // Si al volver de Stripe se ha puesto la cookie os_pro=1, mostramos estado Pro
+  const isPro = cookies().get('os_pro')?.value === '1';
+
   return (
     <div className="space-y-10">
       <header className="text-center space-y-4">
@@ -14,8 +20,8 @@ export default function Page() {
           Edita PDFs, resume y mejora tus textos con IA — todo en un solo lugar, gratis para empezar.
         </p>
         <div className="flex gap-3 justify-center">
-        <CTAButton href="/tools">Probar herramientas</CTAButton>          
-        <a href="#precios" className="btn bg-neutral-800 hover:bg-neutral-700">Ver precios</a>
+          <CTAButton href="/tools">Probar herramientas</CTAButton>
+          <a href="#precios" className="btn bg-neutral-800 hover:bg-neutral-700">Ver precios</a>
         </div>
       </header>
 
@@ -28,6 +34,7 @@ export default function Page() {
       <section id="precios" className="space-y-4">
         <h2 className="text-2xl font-bold">Precios</h2>
         <div className="grid md:grid-cols-3 gap-5">
+          {/* Plan Gratis */}
           <div className="card">
             <h3 className="text-xl font-semibold mb-2">Gratis</h3>
             <ul className="text-sm text-neutral-300 list-disc pl-5 space-y-1">
@@ -36,15 +43,28 @@ export default function Page() {
               <li>Mejora de texto (1.000 palabras/día)</li>
             </ul>
           </div>
+
+          {/* Plan Pro */}
           <div className="card border-brand">
             <h3 className="text-xl font-semibold mb-2">Pro</h3>
-            <p className="text-3xl font-extrabold mb-2">5€<span className="text-base font-medium">/mes</span></p>
+            <p className="text-3xl font-extrabold mb-2">
+              5€<span className="text-base font-medium">/mes</span>
+            </p>
             <ul className="text-sm text-neutral-300 list-disc pl-5 space-y-1">
               <li>IA ampliada y rápida</li>
               <li>Resúmenes largos</li>
               <li>Exportar a DOCX/Markdown</li>
             </ul>
+            <div className="mt-4">
+              {isPro ? (
+                <span className="btn bg-neutral-800 cursor-default">Ya eres Pro ✅</span>
+              ) : (
+                <BuyProButton label="Hazte Pro" />
+              )}
+            </div>
           </div>
+
+          {/* Equipos */}
           <div className="card">
             <h3 className="text-xl font-semibold mb-2">Equipos</h3>
             <p className="text-sm text-neutral-300">Bajo demanda para centros educativos.</p>
