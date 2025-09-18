@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import CTAButton from '../../components/CTAButton';
 
 export default function Page() {
   return (
@@ -13,8 +14,7 @@ export default function Page() {
           Edita PDFs, resume y mejora tus textos con IA — todo en un solo lugar, gratis para empezar.
         </p>
         <div className="flex gap-3 justify-center">
-        <Link href="/tools"className="btn"onClick={() => (window as any).plausible?.('CTA Tools')}>Probar herramientas</Link>          <a href="#precios" className="btn bg-neutral-800 hover:bg-neutral-700">Ver precios</a>
-        </div>
+        <CTAButton href="/tools">Probar herramientas</CTAButton>        </div>
       </header>
 
       <section className="grid md:grid-cols-3 gap-5">
