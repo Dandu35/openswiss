@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import CookieConsent from '../components/CookieConsent';
+import TrackCheckoutSuccess from '../components/TrackCheckoutSuccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="container py-10">{children}</main>
         <Footer />
         <CookieConsent />
+        <TrackCheckoutSuccess />
       </body>
     </html>
   );

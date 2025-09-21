@@ -1,8 +1,19 @@
 // components/BuyProButton.tsx
 'use client';
-import Link from 'next/link';
 
 export default function BuyProButton({ label = 'Hazte Pro' }: { label?: string }) {
-  // Link directo a la ruta GET que 303-redirige a Stripe
-  return <Link href="/api/stripe/checkout" className="btn">{label}</Link>;
+  function go() {
+    const p = (window as any).plausible;
+    if (typeof p === 'function') {
+      p('checkout_start', {
+        callback: () => { window.location.href = '/api/stripe/checkout'; },
+        // fallback: si bloquean requests, forzamos redirect después de 300 ms
+        props: { plan: 'pro_monthly' }
+      });
+      setTimeout(() => { window.location.href = '/api/stripe/checkout'; }, 300);
+    } else {
+      window.location.href = '/api/stripe/checkout';
+    }
+  }
+  return <button className="btn" onClick={go}>{label}</button>;
 }

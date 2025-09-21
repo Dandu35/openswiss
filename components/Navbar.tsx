@@ -1,3 +1,4 @@
+// components/Navbar.tsx (fragmento)
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 
@@ -16,6 +17,7 @@ export default function Navbar() {
           <Link href="/tools" className="hover:underline">Herramientas</Link>
           <a href="/#precios" className="hover:underline">Precios</a>
           {isPro && <a href="/api/stripe/portal" className="hover:underline">Cuenta</a>}
+          {isPro && <a href="/api/stripe/signout" className="hover:underline">Salir</a>}
         </div>
       </div>
     </nav>
