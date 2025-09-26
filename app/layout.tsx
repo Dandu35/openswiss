@@ -4,7 +4,7 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import CookieConsent from '../components/CookieConsent';
 import TrackCheckoutSuccess from '../components/TrackCheckoutSuccess';
-
+import Providers from '../components/Providers';
 export const dynamic = 'force-dynamic';
 
 function safeUrl(u?: string) {
@@ -48,13 +48,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body>
-        <Navbar />
-        <main className="container py-10">{children}</main>
-        <Footer />
-        <CookieConsent />
-        <TrackCheckoutSuccess />
+        <Providers>
+          <Navbar />
+          <main className="container py-10">{children}</main>
+          <Footer />
+          <CookieConsent />
+          <TrackCheckoutSuccess />
+        </Providers>
       </body>
     </html>
   );
+  
   
 }
