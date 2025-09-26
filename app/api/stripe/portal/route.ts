@@ -12,12 +12,47 @@ function baseFromReq(req: NextRequest) {
 function parseCookies(header: string | null) {
   const out: Record<string, string> = {};
   if (!header) return out;
-  header.split(';').forEach(p => { const [k,...r]=p.trim().split('='); out[k]=decodeURIComponent(r.join('=')||''); });
+  header.split(';').forEach(p => {
+    const [k, ...r] = p.trim().split('=');
+    out[k] = decodeURIComponent(r.join('=') || '');
+  });
   return out;
 }
 function redirect(base: string, pathOrMsg = '') {
-  const url = pathOrMsg.startsWith('/') ? `${base}${pathOrMsg}` : `${base}/?msg=${encodeURIComponent(pathOrMsg)}`;
+  const url = pathOrMsg.startsWith('/')
+    ? `${base}${pathOrMsg}`
+    : `${base}/?msg=${encodeURIComponent(pathOrMsg)}`;
   return new Response(null, { status: 302, headers: { Location: url } });
+}
+
+// Crea o encuentra una configuración válida del portal (en TEST o LIVE según tu clave)
+async function ensurePortalConfiguration(stripe: Stripe, base: string): Promise<string> {
+  const explicit = process.env.STRIPE_PORTAL_CONFIGURATION_ID;
+  if (explicit) return explicit; // si la pones, la usamos
+
+  // ¿ya hay alguna config?
+  const list = await stripe.billingPortal.configurations.list({ limit: 1 });
+  if (list.data?.[0]?.id) return list.data[0].id;
+
+  // no hay configs → crea una mínima
+  const created = await stripe.billingPortal.configurations.create({
+    business_profile: {
+      privacy_policy_url: `${base}/privacy`,
+      terms_of_service_url: `${base}/terms`,
+    },
+    features: {
+      customer_update: { enabled: true, allowed_updates: ['email','name','address','phone','shipping'] },
+      payment_method_update: { enabled: true },
+      invoice_history: { enabled: true },
+      subscription_cancel: { enabled: true, mode: 'at_period_end' },
+      subscription_update: {
+        enabled: true,
+        default_allowed_updates: ['price','quantity','promotion_code'],
+        proration_behavior: 'create_prorations',
+      },
+    },
+  });
+  return created.id;
 }
 
 export async function GET(req: NextRequest) {
@@ -30,35 +65,24 @@ export async function GET(req: NextRequest) {
   if (!customerId) return redirect(base, '/#precios');
 
   const stripe = new Stripe(secret);
-  const cfg = process.env.STRIPE_PORTAL_CONFIGURATION_ID || undefined;
-
-  // helper para crear sesión (opcionalmente con config)
-  async function createSession(useCfg: boolean) {
-    return stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: base,
-      ...(useCfg && cfg ? { configuration: cfg } : {}),
-    });
-  }
+  const debug = new URL(req.url).searchParams.get('debug') === '1';
 
   try {
-    let sess = await createSession(true);
-    return new Response(null, { status: 303, headers: { Location: sess.url! } });
-  } catch (e: any) {
-    // Si la config no existe en este modo, reintenta sin configuration
-    const msg = String(e?.message || '');
-    const isMissingCfg = (e?.code === 'resource_missing' && (e?.param === 'configuration' || msg.includes('No such configuration')));
-    if (cfg && isMissingCfg) {
-      try {
-        const sess2 = await createSession(false);
-        return new Response(null, { status: 303, headers: { Location: sess2.url! } });
-      } catch (e2: any) {
-        console.error('Stripe portal fallback error:', e2?.message || e2);
-        return redirect(base, e2?.message || 'No se pudo crear el portal (fallback)');
-      }
+    const configuration = await ensurePortalConfiguration(stripe, base);
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: base,
+      configuration,
+    });
+
+    if (debug) {
+      return Response.json({ ok: true, customerId, configuration, sessionUrl: session.url });
     }
+    return new Response(null, { status: 303, headers: { Location: session.url! } });
+  } catch (e: any) {
+    const msg = e?.message || 'No se pudo crear el portal';
     console.error('Stripe portal error:', msg);
-    return redirect(base, msg || 'No se pudo crear el portal');
+    return redirect(base, msg);
   }
 }
 
