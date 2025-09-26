@@ -3,30 +3,54 @@ import Stripe from 'stripe';
 
 export const runtime = 'nodejs';
 
-export async function GET(req: NextRequest) {
-  const secret = process.env.STRIPE_SECRET_KEY;
-  if (!secret) return json(500, { error: 'Falta STRIPE_SECRET_KEY' });
+function baseFromReq(req: NextRequest) {
+  const host = req.headers.get('host') || 'localhost:3000';
+  const proto = (req.headers.get('x-forwarded-proto') || 'https').split(',')[0];
+  return `${proto}://${host}`;
+}
 
-  const cookies = req.headers.get('cookie') || '';
-  const cust = readCookie(cookies, 'os_cust');
-  if (!cust) return json(401, { error: 'No hay cliente (compra primero o vuelve a iniciar sesión)' });
-
-  const stripe = new Stripe(secret);
-  const base =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
-
-  const session = await stripe.billingPortal.sessions.create({
-    customer: cust,
-    return_url: base,
+function parseCookies(header: string | null) {
+  const out: Record<string, string> = {};
+  if (!header) return out;
+  header.split(';').forEach(p => {
+    const [k, ...r] = p.trim().split('=');
+    out[k] = decodeURIComponent(r.join('=') || '');
   });
-
-  return Response.redirect(session.url, 303);
+  return out;
 }
 
-function json(status: number, body: any) {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+function redirect(base: string, pathOrMsg = '') {
+  const url = pathOrMsg.startsWith('/') ? `${base}${pathOrMsg}` : `${base}/?msg=${encodeURIComponent(pathOrMsg)}`;
+  return new Response(null, { status: 302, headers: { Location: url } });
 }
-function readCookie(header: string, name: string) {
-  return header.split(';').map(s => s.trim()).find(s => s.startsWith(name + '='))?.split('=')[1] || '';
+
+export async function GET(req: NextRequest) {
+  const base = baseFromReq(req);
+  const secret = process.env.STRIPE_SECRET_KEY || '';
+  if (!secret) return redirect(base, 'Falta STRIPE_SECRET_KEY');
+
+  // Necesitamos el customer de Stripe (lo guardamos en cookie os_cust al volver del checkout)
+  const cookies = parseCookies(req.headers.get('cookie'));
+  const customerId = cookies['os_cust'];
+  if (!customerId) {
+    // Si no tenemos customer, le mandamos a precios o mostramos aviso
+    return redirect(base, '/#precios');
+  }
+
+  try {
+    const stripe = new Stripe(secret);
+    // Asegúrate de tener el Portal activado en Stripe Dashboard (Settings → Billing → Customer Portal)
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: base, // al cerrar portal, vuelve a la home (puedes cambiarlo a `${base}/account`)
+    });
+    return new Response(null, {
+      status: 303,
+      headers: { Location: session.url! },
+    });
+  } catch (e: any) {
+    const msg = e?.message || 'No se pudo crear el portal';
+    console.error('Stripe portal error:', msg);
+    return redirect(base, msg);
+  }
 }
