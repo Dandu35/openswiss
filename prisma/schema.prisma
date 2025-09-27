@@ -14,7 +14,9 @@ model User {
   emailVerified    DateTime?
   image            String?
   stripeCustomerId String?  @unique
-
+  // NUEVO:
+  stripeStatus     String?  // active | trialing | past_due | canceled | incomplete | ...
+  stripeCurrentPeriodEnd DateTime? //Fin de ciclo actual
   accounts Account[]
   sessions Session[]
 }
