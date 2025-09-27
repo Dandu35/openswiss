@@ -1,3 +1,4 @@
+// app/api/stripe/confirm/route.ts
 import type { NextRequest } from 'next/server';
 import Stripe from 'stripe';
 import { getServerSession } from 'next-auth';
@@ -41,9 +42,8 @@ export async function GET(req: NextRequest) {
   try {
     const stripe = new Stripe(secret);
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['subscription'],
-    });
+    // Recupera la sesión SIN expand para evitar choques de tipos
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.mode !== 'subscription' && session.mode !== 'payment') {
       return redirect(`${base}/?msg=${encodeURIComponent('Modo de checkout no soportado')}`);
@@ -55,15 +55,27 @@ export async function GET(req: NextRequest) {
     }
 
     const customerId = String(session.customer || '');
-    const subObj = typeof session.subscription === 'string' ? null : session.subscription;
-    const subscriptionId = subObj?.id || '';
-    const status = subObj?.status || 'active';
-    const periodEnd = subObj?.current_period_end
-      ? new Date(subObj.current_period_end * 1000)
-      : undefined;
-
     if (!customerId) {
       return redirect(`${base}/?msg=${encodeURIComponent('No se encontró el customer de Stripe')}`);
+    }
+
+    // Si hay suscripción, la leemos por ID y extraemos status + period_end con cast seguro
+    let subscriptionId = '';
+    let status: string = 'active';
+    let periodEnd: Date | undefined;
+
+    if (session.mode === 'subscription') {
+      subscriptionId =
+        typeof session.subscription === 'string'
+          ? session.subscription
+          : session.subscription?.id || '';
+
+      if (subscriptionId) {
+        const sub = await stripe.subscriptions.retrieve(subscriptionId);
+        status = sub.status as string;
+        const cpe = (sub as any)?.current_period_end; // algunos types no lo exponen
+        if (typeof cpe === 'number') periodEnd = new Date(cpe * 1000);
+      }
     }
 
     // Cookies (MVP UX)
