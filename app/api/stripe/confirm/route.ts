@@ -1,5 +1,9 @@
-import { NextRequest } from 'next/server';
+// app/api/stripe/confirm/route.ts
+import type { NextRequest } from 'next/server';
 import Stripe from 'stripe';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../../../../lib/auth';
+import { prisma } from '../../../../lib/prisma';
 
 export const runtime = 'nodejs';
 
@@ -9,72 +13,93 @@ function baseFromReq(req: NextRequest) {
   return `${proto}://${host}`;
 }
 
-function redirect(base: string, msg?: string, cookies: string[] = []) {
-  const headers = new Headers();
-  headers.set('Location', msg ? `${base}/?msg=${encodeURIComponent(msg)}` : base);
-  cookies.forEach(c => headers.append('Set-Cookie', c));
-  return new Response(null, { status: 302, headers });
+function setCookie(name: string, value: string, maxAgeSec = 60 * 60 * 24 * 180) {
+  // 180 días por defecto (ajusta a tu gusto). Sin webhooks, esto actúa como "sesión PRO" local.
+  const isProd = process.env.NODE_ENV === 'production';
+  return `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAgeSec}; HttpOnly; SameSite=Lax${
+    isProd ? '; Secure' : ''
+  }`;
 }
 
-function cookie(name: string, value: string, maxAgeSec: number, isProd: boolean) {
-  const attrs = `Path=/; HttpOnly; SameSite=Lax${isProd ? '; Secure' : ''}`;
-  return `${name}=${encodeURIComponent(value)}; Max-Age=${maxAgeSec}; ${attrs}`;
+function redirect(url: string) {
+  return new Response(null, { status: 302, headers: { Location: url } });
 }
 
 export async function GET(req: NextRequest) {
   const base = baseFromReq(req);
-  const secret = process.env.STRIPE_SECRET_KEY || '';
-  const url = new URL(req.url);
-  const sessionId = url.searchParams.get('session_id') || '';
 
-  // Validaciones tempranas
-  if (!secret) return redirect(base, 'Falta STRIPE_SECRET_KEY');
-  if (!sessionId) return redirect(base, 'Falta session_id');
+  const sessionId =
+    new URL(req.url).searchParams.get('session_id') ||
+    new URL(req.url).searchParams.get('sid') ||
+    undefined;
 
-  // Chequeo de modo (diagnóstico útil)
-  const isLiveKey = secret.startsWith('sk_live_');
-  const isTestKey = secret.startsWith('sk_test_');
-  const isTestSession = sessionId.startsWith('cs_test_');
-  const isLiveSession = sessionId.startsWith('cs_live_');
-  if ((isTestSession && !isTestKey) || (isLiveSession && !isLiveKey)) {
-    const msg = isTestSession
-      ? 'Sesión TEST con clave LIVE. Usa sk_test_* y price de test.'
-      : 'Sesión LIVE con clave TEST. Usa sk_live_* y price live.';
-    return redirect(base, msg);
+  if (!sessionId) {
+    return redirect(`${base}/?msg=${encodeURIComponent('Falta session_id')}`);
   }
+
+  const secret = process.env.STRIPE_SECRET_KEY || '';
+  if (!secret) return redirect(`${base}/?msg=${encodeURIComponent('Falta STRIPE_SECRET_KEY')}`);
 
   try {
     const stripe = new Stripe(secret);
+
+    // Recupera la sesión; expandimos subscription para obtener el id con seguridad
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['subscription', 'customer'],
+      expand: ['subscription'],
     });
 
-    // Éxito de checkout
-    const ok =
-      session.status === 'complete' ||
-      session.payment_status === 'paid' ||
-      session.payment_status === 'no_payment_required'; // por si hay trial
+    // Comprobaciones mínimas
+    if (session.mode !== 'subscription' && session.mode !== 'payment') {
+      return redirect(`${base}/?msg=${encodeURIComponent('Modo de checkout no soportado')}`);
+    }
+    if (session.status !== 'complete') {
+      return redirect(
+        `${base}/?msg=${encodeURIComponent(`Estado de pago no completado: ${session.status}`)}`
+      );
+    }
 
-    if (!ok) return redirect(base, 'Pago no completado');
-
-    const customerId =
-      typeof session.customer === 'string' ? session.customer : session.customer?.id || '';
+    const customerId = String(session.customer || '');
     const subscriptionId =
-      typeof session.subscription === 'string' ? session.subscription : session.subscription?.id || '';
+      (typeof session.subscription === 'string'
+        ? session.subscription
+        : session.subscription?.id) || '';
 
-    const maxAge = 60 * 60 * 24 * 35;
-    const isProd = process.env.NODE_ENV === 'production';
-    const cookies: string[] = [
-      cookie('os_pro', '1', maxAge, isProd),
-    ];
-    if (customerId) cookies.push(cookie('os_cust', customerId, maxAge, isProd));
-    if (subscriptionId) cookies.push(cookie('os_sub', subscriptionId, maxAge, isProd));
+    if (!customerId) {
+      return redirect(`${base}/?msg=${encodeURIComponent('No se encontró el customer de Stripe')}`);
+    }
 
-    return redirect(base, 'pro=1', cookies);
+    // -- Marcar PRO por cookies (MVP sin webhooks) --
+    const headers = new Headers();
+    headers.append('Set-Cookie', setCookie('os_pro', '1'));
+    headers.append('Set-Cookie', setCookie('os_cust', customerId));
+    if (subscriptionId) headers.append('Set-Cookie', setCookie('os_sub', subscriptionId));
+
+    // -- Si hay sesión NextAuth, guardar el customer en la DB del usuario --
+    try {
+      const auth = await getServerSession(authOptions);
+      const email = auth?.user?.email;
+      if (email) {
+        await prisma.user.upsert({
+          where: { email },
+          update: { stripeCustomerId: customerId },
+          create: { email, stripeCustomerId: customerId },
+        });
+      }
+    } catch (e) {
+      console.error('No se pudo vincular Stripe customer al usuario:', e);
+      // No bloqueamos el flujo al usuario; seguimos
+    }
+
+    headers.set('Location', `${base}/account?msg=${encodeURIComponent('Pago confirmado. ¡Gracias!')}`);
+    return new Response(null, { status: 302, headers });
   } catch (e: any) {
-    // Mostrar el mensaje real de Stripe en la query para depurar
-    const rawMsg = e?.raw?.message || e?.message || 'Error verificando sesión de pago';
-    console.error('Stripe confirm error:', rawMsg);
-    return redirect(base, rawMsg);
+    const msg = e?.message || 'Error confirmando el pago';
+    console.error('Stripe confirm error:', msg);
+    return redirect(`${base}/?msg=${encodeURIComponent(msg)}`);
   }
+}
+
+// Evita 405 si algún agente hace HEAD a la ruta
+export async function HEAD() {
+  return new Response(null, { status: 200 });
 }
