@@ -1,15 +1,24 @@
-// components/Navbar.tsx
 import Link from 'next/link';
-import { cookies } from 'next/headers';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../lib/auth';
-import SignOutBtn from './SignOutBtn'; // client btn (ver más abajo)
+import { prisma } from '../lib/prisma';
+import SignOutBtn from './SignOutBtn';
+
+function isActive(status?: string | null, end?: Date | null) {
+  const ok = new Set(['active', 'trialing', 'past_due']);
+  if (!status || !ok.has(status)) return false;
+  if (end && end.getTime() < Date.now()) return false;
+  return true;
+}
 
 export default async function Navbar() {
   const session = await getServerSession(authOptions);
-  const c = cookies();
-  const isPro = c.get('os_pro')?.value === '1';
-  const hasCustomer = !!c.get('os_cust')?.value;
+
+  let showAccount = false;
+  if (session?.user?.email) {
+    const u = await prisma.user.findUnique({ where: { email: session.user.email } });
+    showAccount = isActive(u?.stripeStatus, u?.stripeCurrentPeriodEnd) && !!u?.stripeCustomerId;
+  }
 
   return (
     <nav className="border-b border-neutral-800">
@@ -23,9 +32,7 @@ export default async function Navbar() {
 
           {session && (
             <>
-              {(isPro && hasCustomer) && (
-                <a href="/api/stripe/portal" className="hover:underline">Cuenta</a>
-              )}
+              {showAccount && <a href="/api/stripe/portal" className="hover:underline">Cuenta</a>}
               <SignOutBtn />
             </>
           )}

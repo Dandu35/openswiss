@@ -1,4 +1,7 @@
 import type { NextRequest } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../../../lib/auth';
+import { prisma } from '../../../lib/prisma';
 
 export const runtime = 'nodejs';
 
@@ -19,6 +22,12 @@ function parseCookies(header: string | null) {
 function clientIp(req: NextRequest) {
   return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || req.headers.get('x-real-ip') || '0.0.0.0';
+}
+function isActive(status?: string | null, end?: Date | null) {
+  const ok = new Set(['active','trialing','past_due']);
+  if (!status || !ok.has(status)) return false;
+  if (end && end.getTime() < Date.now()) return false;
+  return true;
 }
 
 // REST (Vercel KV/Upstash)
@@ -44,8 +53,18 @@ async function redisGet(key: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const cookiesIn = parseCookies(req.headers.get('cookie'));
-  const isPro = cookiesIn['os_pro'] === '1';
+  // 1) Detectar PRO por DB si hay sesión
+  const session = await getServerSession(authOptions);
+  let isPro = false;
+  if (session?.user?.email) {
+    const u = await prisma.user.findUnique({ where: { email: session.user.email } });
+    isPro = isActive(u?.stripeStatus, u?.stripeCurrentPeriodEnd) && !!u?.stripeCustomerId;
+  } else {
+    // 2) Fallback a cookie si no hay sesión
+    const cookiesIn = parseCookies(req.headers.get('cookie'));
+    isPro = cookiesIn['os_pro'] === '1';
+  }
+
   const day = todayKey();
   const ip = clientIp(req);
   const usageKey = `usage:${day}:${ip}:${isPro ? 'pro' : 'free'}`;
